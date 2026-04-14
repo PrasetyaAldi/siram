@@ -1,0 +1,16 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code agar hot-reload berjalan
+      - .:/app
+      # Jangan mount node_modules dari host (tidak ada)
+      - /app/node_modules
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+    env_file:
+      - .env.local
