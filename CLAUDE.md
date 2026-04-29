@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Skripsi: **Rancang Bangun Prototype Penyiram Tanaman Otomatis Berbasis IoT pada Budidaya Cabai**
 Mahasiswa: Ahmad Abdul Rohib — Teknik Elektro UNESA 2025
 
-Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelembaban tanah dan pH, mengontrol pompa via relay, dan menampilkan data di LCD. Website Next.js di Vercel untuk monitoring dan kontrol manual dari browser via Firebase Realtime Database.
+Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelembaban tanah dan mengontrol pompa via relay. Website Next.js di Vercel untuk monitoring dan kontrol manual dari browser via Firebase Realtime Database.
 
 ---
 
@@ -15,7 +15,7 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 
 | Layer    | Teknologi                                                              |
 |----------|------------------------------------------------------------------------|
-| Hardware | NodeMCU ESP32, Capacitive Soil Moisture Sensor, pH Sensor, Relay, Pompa DC, LCD I2C 16x2, Step-Down LM2596 |
+| Hardware | NodeMCU ESP32, Capacitive Soil Moisture Sensor, Relay, Pompa DC, Step-Down LM2596 |
 | Firmware | Arduino C++ — `penyiraman_otomatis.ino`                               |
 | Database | Firebase Realtime Database (monitoring & kontrol dari website)        |
 | Frontend | Next.js 14 + TypeScript + Recharts + Tailwind                         |
@@ -27,13 +27,13 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 ## Arsitektur Sistem
 
 ```
-[Soil Moisture + pH Sensor] ──analog──▶ [ESP32] ──HTTP PUT──▶ [Firebase RTDB]
-                                           │                        │
-                                   [Relay + Pompa]         realtime listener
-                                   [LCD I2C 16x2]                  │
-                                           │                [Next.js di Vercel]
-                                    ◀──stream event──          (browser)
-                                    /command/pump
+[Soil Moisture Sensor] ──analog──▶ [ESP32] ──HTTP PUT──▶ [Firebase RTDB]
+                                      │                        │
+                              [Relay + Pompa]         realtime listener
+                                      │                        │
+                                      │                [Next.js di Vercel]
+                                ◀──stream event──         (browser)
+                                /command/pump
 ```
 
 **Alur data:**
@@ -49,10 +49,7 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 | Komponen           | Pin    | Keterangan                     |
 |--------------------|--------|--------------------------------|
 | Soil Moisture AOUT | GPIO34 | ADC input (read-only)          |
-| pH Sensor AOUT     | GPIO35 | ADC input (read-only)          |
 | Relay IN           | GPIO14 | Output digital (active-LOW)    |
-| LCD SDA            | GPIO21 | I2C Data (default ESP32)       |
-| LCD SCL            | GPIO22 | I2C Clock (default ESP32)      |
 
 ---
 
@@ -60,12 +57,11 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 
 **Library yang dibutuhkan di Arduino IDE:**
 - `Firebase ESP32 Client` by Mobizt
-- `LiquidCrystal_I2C` by Frank de Brabander
+- `ArduinoJson` by Benoit Blanchon
 
 **Kalibrasi sensor (wajib diukur ulang per unit):**
-- `SOIL_DRY` = nilai ADC saat sensor di udara (~3200)
-- `SOIL_WET` = nilai ADC saat sensor di air (~800)
-- `PH_SLOPE` dan `PH_OFFSET` = kalibrasi dengan buffer pH 4.0 dan 7.0
+- `SOIL_KERING` = nilai ADC saat sensor di udara (~3200)
+- `SOIL_BASAH` = nilai ADC saat sensor di air (~800)
 
 **Command dari website** (ditulis ke Firebase `/command/pump`):
 - `"on"` → nyalakan pompa, mode manual
@@ -75,7 +71,7 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 
 **Mekanisme stream:** `Firebase.setStreamCallback()` menjalankan listener di FreeRTOS task terpisah. Callback hanya set flag `cmdPending`, eksekusi sebenarnya dilakukan di `loop()` untuk menghindari race condition dengan `uploadFirebase()`.
 
-**Threshold otomatis:** Pompa ON jika `kelembaban < 30%`.
+**Threshold otomatis:** Pompa ON jika `kelembaban < 50%` (konstanta `THRESHOLD_PERSEN` di firmware).
 
 ---
 

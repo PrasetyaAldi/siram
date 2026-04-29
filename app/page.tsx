@@ -343,7 +343,7 @@ export default function Dashboard() {
             label="KELEMBABAN SAAT INI"
             value={sensor ? sensor.kelembaban_persen.toFixed(1) : "—"}
             unit="%" />
-          <InfoCard label="THRESHOLD SIRAM" value="< 60" unit="%" />
+          <InfoCard label="THRESHOLD SIRAM" value="< 50" unit="%" />
           <InfoCard label="STATUS MODE" value={pompa?.mode?.toUpperCase() ?? "—"} />
         </div>
 
@@ -367,8 +367,8 @@ export default function Dashboard() {
                   tick={{ fontFamily:"'DM Mono',monospace", fontSize:9, fill:"#9a8f85" }}
                   tickLine={false} axisLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={60} stroke="#f4a261" strokeDasharray="5 4"
-                  label={{ value:"60% batas siram", position:"insideTopRight",
+                <ReferenceLine y={50} stroke="#f4a261" strokeDasharray="5 4"
+                  label={{ value:"50% batas siram", position:"insideTopRight",
                     fontFamily:"'DM Mono',monospace", fontSize:9, fill:"#f4a261" }} />
                 <Line type="monotone" dataKey="value" stroke="#2d6a4f" strokeWidth={2.5}
                   dot={{ r:3, fill:"#2d6a4f", strokeWidth:0 }}
