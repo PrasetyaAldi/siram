@@ -78,9 +78,12 @@ Sistem IoT penyiraman otomatis tanaman cabai rawit. ESP32 membaca sensor kelemba
 ## Frontend (Next.js) — Struktur Kode
 
 ```
-app/page.tsx          ← dashboard utama (gauge + chart + kontrol pompa)
-hooks/usePlantData.ts ← useSensorData() + usePompaData() — Firebase realtime
-lib/firebase.ts       ← konfigurasi Firebase + listenSensor/listenPompa/sendCommand
+app/page.tsx              ← dashboard utama (gauge + chart + kontrol + statistik)
+app/api/log/route.ts      ← endpoint logging 24/7 (dipanggil cron-job.org tiap 1 menit)
+hooks/usePlantData.ts     ← useSensorData() + usePompaData() — Firebase realtime
+hooks/useHistoryLogger.ts ← catat riwayat + deteksi sesi pompa (browser-side)
+hooks/useHistory.ts       ← useHistoryChart(range) + useWateringStats() + formatDurasi
+lib/firebase.ts           ← konfigurasi Firebase + listener + logging + cleanup
 ```
 
 **Alur data frontend:**
@@ -96,7 +99,27 @@ lib/firebase.ts       ← konfigurasi Firebase + listenSensor/listenPompa/sendCo
 /pompa/status              (bool)
 /pompa/mode                ("otomatis" | "manual")
 /command/pump              ("on" | "off" | "auto" | "none")
+
+/history/sensor/{epochDetik}   ← sampel per menit: { t, persen, raw, pompa, mode }
+/history/siram/{epochDetik}    ← sesi penyiraman: { mulai, selesai, durasi_detik, mode, sumber }
+/logger/heartbeat              ← epoch ms — penanda browser sedang aktif mencatat
+/logger/cron                   ← state cron logger: { lastBootTs, lastPump, pumpSince }
 ```
+
+**Sistem riwayat & statistik** (ESP32 tidak diubah — semua di sisi web):
+- Browser (saat dashboard terbuka): catat 1 sampel/menit ke `/history/sensor`
+  (key = epoch detik bucket 60 → idempoten antar tab), deteksi transisi pompa
+  ON→OFF secara realtime → tulis sesi presisi ke `/history/siram`.
+- Cron 24/7: cron-job.org memanggil `GET /api/log?key=<CRON_SECRET>` tiap 1 menit.
+  Endpoint baca `/sensor` + `/pompa` via REST, tulis sampel per menit, dan
+  mencatat sesi pompa (resolusi menit) HANYA jika heartbeat browser basi (> 3 mnt).
+- Deteksi ESP32 offline di cron: `sensor/timestamp` (detik sejak boot) tidak
+  berubah antar dua run cron → tidak ada tulisan baru → data basi, jangan dicatat.
+- Retensi: sampel `/history/sensor` > 30 hari dihapus otomatis saat dashboard
+  dibuka (`cleanupOldHistory`). Sesi `/history/siram` disimpan permanen (kecil).
+- Statistik (`useWateringStats`): jumlah siram hari ini, total & rata-rata durasi
+  pompa, rata-rata interval antar siram (jeda > 48 jam diabaikan), rata-rata
+  kelembaban harian.
 
 ---
 

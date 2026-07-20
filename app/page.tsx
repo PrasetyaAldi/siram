@@ -1,10 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSensorData, usePompaData } from "@/hooks/usePlantData";
+import { useHistoryLogger } from "@/hooks/useHistoryLogger";
+import {
+  useHistoryChart, useWateringStats, formatDurasi,
+  ChartRange, RANGE_LABELS,
+} from "@/hooks/useHistory";
+import { cleanupOldHistory } from "@/lib/firebase";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
+
+const CHART_RANGES: ChartRange[] = ["live", "30m", "3h", "24h", "7d"];
 
 // ── Status Badge ────────────────────────────────────────────────
 function StatusBadge({ online }: { online: boolean }) {
@@ -124,6 +133,20 @@ function InfoCard({ label, value, unit }: {
   );
 }
 
+// ── Stat Card (statistik penyiraman) ─────────────────────────────
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="info-card stat-card">
+      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:"10px", color:"#9a8f85",
+        letterSpacing:"0.1em", marginBottom:"8px" }}>{label}</div>
+      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:"18px",
+        fontWeight:700, color:"#2d2925", lineHeight:1.2 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 // ── Custom Tooltip Chart ─────────────────────────────────────────
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -143,6 +166,19 @@ function CustomTooltip({ active, payload, label }: any) {
 export default function Dashboard() {
   const { sensor, history, online } = useSensorData();
   const { pompa, loading, kontrolPompa } = usePompaData();
+
+  // Catat riwayat ke Firebase selama dashboard terbuka
+  useHistoryLogger(sensor, pompa);
+
+  const [range, setRange] = useState<ChartRange>("live");
+  const { points: historyPoints, loading: chartLoading } = useHistoryChart(range);
+  const stats = useWateringStats();
+
+  // Bersihkan riwayat > 30 hari, sekali tiap dashboard dibuka
+  useEffect(() => { cleanupOldHistory(30).catch(() => {}); }, []);
+
+  const chartData  = range === "live" ? history : historyPoints;
+  const denseChart = range === "24h" || range === "7d";
 
   return (
     <>
@@ -223,9 +259,40 @@ export default function Dashboard() {
           border: 1px solid #e8e0d5;
         }
         /* Kartu ketiga span 2 kolom di mobile */
-        .info-card:nth-child(3) {
+        .info-grid .info-card:nth-child(3) {
           grid-column: 1 / -1;
         }
+
+        /* ── Statistik penyiraman ── */
+        .stats-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        .stat-card:nth-child(5) { grid-column: 1 / -1; }
+
+        /* ── Tombol rentang chart ── */
+        .range-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+        .range-btn {
+          font-family: 'DM Mono', monospace;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          padding: 6px 12px;
+          border-radius: 14px;
+          border: 1px solid #e8e0d5;
+          background: #f8f5f0;
+          color: #7a7265;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .range-btn:hover  { border-color: #c5b9ae; }
+        .range-btn.active { background: #2d6a4f; border-color: #2d6a4f; color: #fff; }
 
         /* ── Status badge ── */
         .status-badge {
@@ -308,7 +375,10 @@ export default function Dashboard() {
           .main-grid { grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 
           .info-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-          .info-card:nth-child(3) { grid-column: auto; }
+          .info-grid .info-card:nth-child(3) { grid-column: auto; }
+
+          .stats-grid { grid-template-columns: repeat(5, 1fr); gap: 12px; }
+          .stat-card:nth-child(5) { grid-column: auto; }
 
           .card { padding: 24px; }
         }
@@ -347,22 +417,61 @@ export default function Dashboard() {
           <InfoCard label="STATUS MODE" value={pompa?.mode?.toUpperCase() ?? "—"} />
         </div>
 
+        {/* Statistik penyiraman */}
+        <div className="card" style={{ marginBottom:"12px" }}>
+          <div className="card-label">STATISTIK PENYIRAMAN</div>
+          <div className="stats-grid">
+            <StatCard label="SIRAM HARI INI"
+              value={`${stats.siramHariIni}×`} />
+            <StatCard label="POMPA MENYALA HARI INI"
+              value={formatDurasi(stats.totalDetikHariIni)} />
+            <StatCard label="RATA-RATA DURASI SIRAM"
+              value={formatDurasi(stats.avgDurasiDetik)} />
+            <StatCard label="RATA-RATA JARAK ANTAR SIRAM"
+              value={formatDurasi(stats.avgIntervalDetik)} />
+            <StatCard label="RATA-RATA KELEMBABAN HARI INI"
+              value={stats.avgKelembabanHariIni !== null
+                ? `${stats.avgKelembabanHariIni.toFixed(1)} %` : "—"} />
+          </div>
+          {stats.totalSesi === 0 && (
+            <div style={{ marginTop:"12px", fontFamily:"'DM Mono',monospace",
+              fontSize:"10px", color:"#9a8f85", letterSpacing:"0.04em" }}>
+              Belum ada sesi penyiraman tercatat — statistik terisi otomatis
+              setelah pompa menyala &amp; mati minimal satu kali.
+            </div>
+          )}
+        </div>
+
         {/* Grafik */}
         <div className="card">
-          <div className="card-label">RIWAYAT KELEMBABAN (20 PEMBACAAN TERAKHIR)</div>
-          {history.length === 0 ? (
+          <div className="card-label">RIWAYAT KELEMBABAN</div>
+          <div className="range-row">
+            {CHART_RANGES.map((r) => (
+              <button key={r}
+                className={`range-btn ${range === r ? "active" : ""}`}
+                onClick={() => setRange(r)}>
+                {RANGE_LABELS[r]}
+              </button>
+            ))}
+          </div>
+          {chartData.length === 0 ? (
             <div style={{ height:"180px", display:"flex", alignItems:"center",
               justifyContent:"center", color:"#9a8f85",
-              fontFamily:"'DM Mono',monospace", fontSize:"13px" }}>
-              Menunggu data dari ESP32...
+              fontFamily:"'DM Mono',monospace", fontSize:"13px", textAlign:"center" }}>
+              {range === "live"
+                ? "Menunggu data dari ESP32..."
+                : chartLoading
+                  ? "Memuat riwayat..."
+                  : "Belum ada data riwayat untuk rentang ini"}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={history} margin={{ top:8, right:4, left:-28, bottom:0 }}>
+              <LineChart data={chartData} margin={{ top:8, right:4, left:-28, bottom:0 }}>
                 <CartesianGrid stroke="#f0ece4" strokeDasharray="4 4" />
                 <XAxis dataKey="time"
                   tick={{ fontFamily:"'DM Mono',monospace", fontSize:9, fill:"#9a8f85" }}
-                  tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                  tickLine={false} axisLine={false} interval="preserveStartEnd"
+                  minTickGap={24} />
                 <YAxis domain={[0,100]}
                   tick={{ fontFamily:"'DM Mono',monospace", fontSize:9, fill:"#9a8f85" }}
                   tickLine={false} axisLine={false} />
@@ -371,11 +480,17 @@ export default function Dashboard() {
                   label={{ value:"50% batas siram", position:"insideTopRight",
                     fontFamily:"'DM Mono',monospace", fontSize:9, fill:"#f4a261" }} />
                 <Line type="monotone" dataKey="value" stroke="#2d6a4f" strokeWidth={2.5}
-                  dot={{ r:3, fill:"#2d6a4f", strokeWidth:0 }}
+                  dot={denseChart ? false : { r:3, fill:"#2d6a4f", strokeWidth:0 }}
                   activeDot={{ r:5, fill:"#2d6a4f" }} animationDuration={400} />
               </LineChart>
             </ResponsiveContainer>
           )}
+          <div style={{ marginTop:"10px", fontFamily:"'DM Mono',monospace",
+            fontSize:"10px", color:"#b5aba0", letterSpacing:"0.04em" }}>
+            {range === "live"
+              ? "Data langsung dari ESP32 (tiap 3 detik, 20 titik terakhir)"
+              : "Data riwayat tersimpan di Firebase (resolusi per menit)"}
+          </div>
         </div>
 
         <p className="footer">

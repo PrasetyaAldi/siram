@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   listenSensor, listenPompa, sendCommand,
   SensorData, PompaData,
@@ -15,10 +15,20 @@ export function useSensorData() {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [online,  setOnline]  = useState(false);
 
+  // sensor.timestamp = detik sejak ESP32 boot (bukan epoch), jadi
+  // kesegaran data dilacak pakai jam browser: timestamp berubah = data baru.
+  const lastArrivalRef = useRef(0);
+  const lastEspTsRef   = useRef<number | null>(null);
+
   useEffect(() => {
     const unsub = listenSensor((data) => {
       setSensor(data);
-      setOnline(true);
+
+      if (lastEspTsRef.current !== data.timestamp) {
+        lastEspTsRef.current   = data.timestamp;
+        lastArrivalRef.current = Date.now();
+        setOnline(true);
+      }
 
       const label = new Date().toLocaleTimeString("id-ID", {
         hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -29,13 +39,11 @@ export function useSensorData() {
       });
     });
 
-    // Deteksi offline jika tidak ada data > 30 detik
+    // Deteksi offline jika tidak ada data baru > 30 detik
     const timer = setInterval(() => {
-      setSensor((prev) => {
-        if (!prev) return prev;
-        if (Math.floor(Date.now() / 1000) - prev.timestamp > 30) setOnline(false);
-        return prev;
-      });
+      if (lastArrivalRef.current && Date.now() - lastArrivalRef.current > 30_000) {
+        setOnline(false);
+      }
     }, 5000);
 
     return () => { unsub(); clearInterval(timer); };
