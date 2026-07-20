@@ -170,14 +170,22 @@ export default function Dashboard() {
   // Catat riwayat ke Firebase selama dashboard terbuka
   useHistoryLogger(sensor, pompa);
 
+  // Panel statistik disembunyikan secara default agar tampilan dashboard
+  // tetap sama dengan lampiran laporan; dibuka lewat tombol teks kecil.
+  const [showStats, setShowStats] = useState(false);
   const [range, setRange] = useState<ChartRange>("live");
   const { points: historyPoints, loading: chartLoading } = useHistoryChart(range);
-  const stats = useWateringStats();
+  const stats = useWateringStats(showStats);
+
+  const toggleStats = () => {
+    if (showStats) setRange("live"); // kembalikan grafik ke tampilan semula
+    setShowStats(!showStats);
+  };
 
   // Bersihkan riwayat > 30 hari, sekali tiap dashboard dibuka
   useEffect(() => { cleanupOldHistory(30).catch(() => {}); }, []);
 
-  const chartData  = range === "live" ? history : historyPoints;
+  const chartData  = !showStats || range === "live" ? history : historyPoints;
   const denseChart = range === "24h" || range === "7d";
 
   return (
@@ -262,6 +270,22 @@ export default function Dashboard() {
         .info-grid .info-card:nth-child(3) {
           grid-column: 1 / -1;
         }
+
+        /* ── Toggle statistik (sengaja tidak menonjol) ── */
+        .toggle-stats {
+          display: block;
+          margin: 0 auto 12px;
+          background: transparent;
+          border: none;
+          font-family: 'DM Mono', monospace;
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          color: #b5aba0;
+          cursor: pointer;
+          padding: 4px 8px;
+          transition: color 0.2s ease;
+        }
+        .toggle-stats:hover { color: #7a7265; }
 
         /* ── Statistik penyiraman ── */
         .stats-grid {
@@ -417,43 +441,54 @@ export default function Dashboard() {
           <InfoCard label="STATUS MODE" value={pompa?.mode?.toUpperCase() ?? "—"} />
         </div>
 
-        {/* Statistik penyiraman */}
-        <div className="card" style={{ marginBottom:"12px" }}>
-          <div className="card-label">STATISTIK PENYIRAMAN</div>
-          <div className="stats-grid">
-            <StatCard label="SIRAM HARI INI"
-              value={`${stats.siramHariIni}×`} />
-            <StatCard label="POMPA MENYALA HARI INI"
-              value={formatDurasi(stats.totalDetikHariIni)} />
-            <StatCard label="RATA-RATA DURASI SIRAM"
-              value={formatDurasi(stats.avgDurasiDetik)} />
-            <StatCard label="RATA-RATA JARAK ANTAR SIRAM"
-              value={formatDurasi(stats.avgIntervalDetik)} />
-            <StatCard label="RATA-RATA KELEMBABAN HARI INI"
-              value={stats.avgKelembabanHariIni !== null
-                ? `${stats.avgKelembabanHariIni.toFixed(1)} %` : "—"} />
-          </div>
-          {stats.totalSesi === 0 && (
-            <div style={{ marginTop:"12px", fontFamily:"'DM Mono',monospace",
-              fontSize:"10px", color:"#9a8f85", letterSpacing:"0.04em" }}>
-              Belum ada sesi penyiraman tercatat — statistik terisi otomatis
-              setelah pompa menyala &amp; mati minimal satu kali.
+        {/* Toggle statistik — tombol teks kecil, tidak menonjol */}
+        <button className="toggle-stats" onClick={toggleStats}>
+          {showStats ? "▴ sembunyikan statistik" : "▸ statistik"}
+        </button>
+
+        {/* Statistik penyiraman (tersembunyi secara default) */}
+        {showStats && (
+          <div className="card" style={{ marginBottom:"12px" }}>
+            <div className="card-label">STATISTIK PENYIRAMAN</div>
+            <div className="stats-grid">
+              <StatCard label="SIRAM HARI INI"
+                value={`${stats.siramHariIni}×`} />
+              <StatCard label="POMPA MENYALA HARI INI"
+                value={formatDurasi(stats.totalDetikHariIni)} />
+              <StatCard label="RATA-RATA DURASI SIRAM"
+                value={formatDurasi(stats.avgDurasiDetik)} />
+              <StatCard label="RATA-RATA JARAK ANTAR SIRAM"
+                value={formatDurasi(stats.avgIntervalDetik)} />
+              <StatCard label="RATA-RATA KELEMBABAN HARI INI"
+                value={stats.avgKelembabanHariIni !== null
+                  ? `${stats.avgKelembabanHariIni.toFixed(1)} %` : "—"} />
             </div>
-          )}
-        </div>
+            {stats.totalSesi === 0 && (
+              <div style={{ marginTop:"12px", fontFamily:"'DM Mono',monospace",
+                fontSize:"10px", color:"#9a8f85", letterSpacing:"0.04em" }}>
+                Belum ada sesi penyiraman tercatat — statistik terisi otomatis
+                setelah pompa menyala &amp; mati minimal satu kali.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Grafik */}
         <div className="card">
-          <div className="card-label">RIWAYAT KELEMBABAN</div>
-          <div className="range-row">
-            {CHART_RANGES.map((r) => (
-              <button key={r}
-                className={`range-btn ${range === r ? "active" : ""}`}
-                onClick={() => setRange(r)}>
-                {RANGE_LABELS[r]}
-              </button>
-            ))}
+          <div className="card-label">
+            {showStats ? "RIWAYAT KELEMBABAN" : "RIWAYAT KELEMBABAN (20 PEMBACAAN TERAKHIR)"}
           </div>
+          {showStats && (
+            <div className="range-row">
+              {CHART_RANGES.map((r) => (
+                <button key={r}
+                  className={`range-btn ${range === r ? "active" : ""}`}
+                  onClick={() => setRange(r)}>
+                  {RANGE_LABELS[r]}
+                </button>
+              ))}
+            </div>
+          )}
           {chartData.length === 0 ? (
             <div style={{ height:"180px", display:"flex", alignItems:"center",
               justifyContent:"center", color:"#9a8f85",
@@ -485,12 +520,14 @@ export default function Dashboard() {
               </LineChart>
             </ResponsiveContainer>
           )}
-          <div style={{ marginTop:"10px", fontFamily:"'DM Mono',monospace",
-            fontSize:"10px", color:"#b5aba0", letterSpacing:"0.04em" }}>
-            {range === "live"
-              ? "Data langsung dari ESP32 (tiap 3 detik, 20 titik terakhir)"
-              : "Data riwayat tersimpan di Firebase (resolusi per menit)"}
-          </div>
+          {showStats && (
+            <div style={{ marginTop:"10px", fontFamily:"'DM Mono',monospace",
+              fontSize:"10px", color:"#b5aba0", letterSpacing:"0.04em" }}>
+              {range === "live"
+                ? "Data langsung dari ESP32 (tiap 3 detik, 20 titik terakhir)"
+                : "Data riwayat tersimpan di Firebase (resolusi per menit)"}
+            </div>
+          )}
         </div>
 
         <p className="footer">

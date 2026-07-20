@@ -95,17 +95,23 @@ export interface WateringStats {
   avgKelembabanHariIni: number | null; // rata-rata kelembaban hari ini
 }
 
-export function useWateringStats(): WateringStats {
+export function useWateringStats(enabled = true): WateringStats {
   const [sessions,     setSessions]     = useState<SiramSession[]>([]);
   const [todaySamples, setTodaySamples] = useState<HistorySample[]>([]);
 
-  useEffect(() => listenSiramSessions(setSessions), []);
+  // Saat panel statistik disembunyikan, jangan subscribe ke Firebase
+  // supaya tidak membuang kuota download.
+  useEffect(() => {
+    if (!enabled) { setSessions([]); return; }
+    return listenSiramSessions(setSessions);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) { setTodaySamples([]); return; }
     const awalHari = new Date();
     awalHari.setHours(0, 0, 0, 0);
     return listenHistory(awalHari.getTime(), setTodaySamples);
-  }, []);
+  }, [enabled]);
 
   return useMemo<WateringStats>(() => {
     const awalHari = new Date();
